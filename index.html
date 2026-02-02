@@ -158,8 +158,8 @@ https://example.com/article2"></textarea>
       <label style="display: inline; margin: 0;">
         Start with: <input type="text" id="startWord" placeholder="(random)">
       </label>
-      <button id="generateBtn" onclick="generate()">Generate</button>
-      <button id="regenBtn" class="secondary" onclick="generate()">Regenerate</button>
+      <button id="generateBtn" onclick="runGenerate()">Generate</button>
+      <button id="regenBtn" class="secondary" onclick="runGenerate()">Regenerate</button>
     </div>
 
     <div id="output" class="output"></div>
@@ -179,10 +179,11 @@ https://example.com/article2"></textarea>
     </p>
   </footer>
 
+  <!-- Markov model logic in separate file for clarity -->
+  <script src="markov.js"></script>
+
   <script>
-    let markovModel = null;
-    let allWords = [];
-    let vocab = new Set();
+    // UI handlers that call into markov.js
 
     async function loadUrls() {
       const urlsText = document.getElementById('urls').value.trim();
@@ -226,91 +227,35 @@ https://example.com/article2"></textarea>
         return;
       }
 
-      // Build Markov model
+      // Build Markov model (function from markov.js)
       buildModel(combinedText);
 
-      showStatus(`Loaded ${successCount}/${urls.length} URLs. ${vocab.size} words in vocabulary.`, 'success');
+      const v = getVocab();
+      showStatus(`Loaded ${successCount}/${urls.length} URLs. ${v.size} words in vocabulary.`, 'success');
       document.getElementById('generatorSection').style.display = 'block';
 
       // Show vocab preview
-      const vocabArray = Array.from(vocab).sort();
+      const vocabArray = Array.from(v).sort();
       document.getElementById('vocabPreview').textContent =
         'Vocabulary: ' + vocabArray.join(', ');
     }
 
-    function buildModel(text) {
-      // Normalize and tokenize
-      const words = text.toLowerCase()
-        .split(/\s+/)
-        .map(w => w.replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, ''))
-        .filter(w => w.length > 0);
+    function runGenerate() {
+      const numWords = parseInt(document.getElementById('numWords').value) || 50;
+      const startWordInput = document.getElementById('startWord').value.trim() || null;
 
-      allWords = words;
+      // Call generateText from markov.js
+      const result = generateText(numWords, startWordInput);
 
-      // Build transitions
-      const transitions = {};
-      for (let i = 0; i < words.length - 1; i++) {
-        const current = words[i];
-        const next = words[i + 1];
-        if (!transitions[current]) {
-          transitions[current] = [];
-        }
-        transitions[current].push(next);
-      }
-
-      // Filter to degree >= 2
-      markovModel = {};
-      for (const [word, followers] of Object.entries(transitions)) {
-        const uniqueFollowers = new Set(followers);
-        if (uniqueFollowers.size >= 2) {
-          markovModel[word] = followers;
-        }
-      }
-
-      vocab = new Set(Object.keys(markovModel));
-    }
-
-    function generate() {
-      if (!markovModel || vocab.size === 0) {
-        showStatus('Load URLs first', 'error');
+      if (result.error) {
+        showStatus(result.error, 'error');
         return;
       }
 
-      const numWords = parseInt(document.getElementById('numWords').value) || 50;
-      const startWordInput = document.getElementById('startWord').value.trim().toLowerCase();
-
-      let current;
-      if (startWordInput) {
-        if (!vocab.has(startWordInput)) {
-          showStatus(`"${startWordInput}" not in vocabulary. Try one of: ${Array.from(vocab).slice(0, 10).join(', ')}...`, 'error');
-          return;
-        }
-        current = startWordInput;
-      } else {
-        // Pick from empirical distribution of words in vocab
-        const candidates = allWords.filter(w => vocab.has(w));
-        current = candidates[Math.floor(Math.random() * candidates.length)];
-      }
-
-      const result = [current];
-
-      for (let i = 0; i < numWords - 1; i++) {
-        if (markovModel[current]) {
-          const followers = markovModel[current];
-          current = followers[Math.floor(Math.random() * followers.length)];
-          result.push(current);
-        } else {
-          // Dead end - pick new start
-          const candidates = allWords.filter(w => vocab.has(w));
-          if (candidates.length === 0) break;
-          current = candidates[Math.floor(Math.random() * candidates.length)];
-          result.push(current);
-        }
-      }
-
-      document.getElementById('output').textContent = result.join(' ');
+      document.getElementById('output').textContent = result.text;
+      const words = result.text.split(' ');
       document.getElementById('stats').textContent =
-        `Generated ${result.length} words starting with "${result[0]}"`;
+        `Generated ${words.length} words starting with "${words[0]}"`;
     }
 
     function clearAll() {
@@ -320,9 +265,6 @@ https://example.com/article2"></textarea>
       document.getElementById('vocabPreview').textContent = '';
       document.getElementById('status').style.display = 'none';
       document.getElementById('generatorSection').style.display = 'none';
-      markovModel = null;
-      allWords = [];
-      vocab = new Set();
     }
 
     function showStatus(message, type) {
